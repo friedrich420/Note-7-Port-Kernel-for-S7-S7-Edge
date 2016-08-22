@@ -26,6 +26,7 @@
 #include <linux/reboot.h>
 #include <linux/delay.h>
 #include <linux/cpu.h>
+#include <linux/ipa.h>
 #include <linux/pm_qos.h>
 #include <linux/kobject.h>
 #include <linux/sysfs.h>
@@ -1597,6 +1598,100 @@ inline ssize_t store_core_freq(const char *buf, size_t count,
 	return count;
 }
 
+<<<<<<< HEAD
+=======
+static size_t get_freq_table_size(struct cpufreq_frequency_table *freq_table)
+{
+	size_t tbl_sz = 0;
+	int i;
+
+	for (i = 0; freq_table[i].frequency != CPUFREQ_TABLE_END; i++)
+		tbl_sz++;
+
+	return tbl_sz;
+}
+
+static ssize_t show_volt_table(struct kobject *kobj,
+				struct attribute *attr, char *buf, int cluster)
+{
+	int i, count = 0;
+	size_t tbl_sz = 0, pr_len;
+	struct cpufreq_frequency_table *freq_table = exynos_info[cluster]->freq_table;
+
+	for (i = 0; freq_table[i].frequency != CPUFREQ_TABLE_END; i++)
+		tbl_sz++;
+
+	if (tbl_sz == 0)
+		return -EINVAL;
+
+	pr_len = (size_t)((PAGE_SIZE - 2) / tbl_sz);
+
+	for (i = 0; freq_table[i].frequency != CPUFREQ_TABLE_END; i++) {
+		if (freq_table[i].frequency != CPUFREQ_ENTRY_INVALID)
+			count += snprintf(&buf[count], pr_len, "%d %d\n",
+					freq_table[i].frequency,
+					exynos_info[cluster]->volt_table[i]);
+	}
+
+	return count;
+}
+
+static ssize_t store_volt_table(struct kobject *kobj, struct attribute *attr,
+					const char *buf, size_t count, int cluster)
+{
+	int i, tokens, rest, target, invalid_offset;
+	struct cpufreq_frequency_table *freq_table = exynos_info[cluster]->freq_table;
+	size_t tbl_sz = get_freq_table_size(freq_table);
+	int t[tbl_sz];
+
+	invalid_offset = 0;
+
+	if ((tokens = read_into((int*)&t, tbl_sz, buf, count)) < 0)
+		return -EINVAL;
+
+	target = -1;
+	if (tokens == 2) {
+		for (i = 0; (freq_table[i].frequency != CPUFREQ_TABLE_END); i++) {
+			unsigned int freq = freq_table[i].frequency;
+			if (freq == CPUFREQ_ENTRY_INVALID)
+				continue;
+
+			if (t[0] == freq) {
+				target = i;
+				break;
+			}
+		}
+	}
+
+	mutex_lock(&cpufreq_lock);
+
+	if (tokens == 2 && target > 0) {
+		if ((rest = t[1] % CL_VOLT_STEP) != 0)
+			t[1] += CL_VOLT_STEP - rest;
+
+		sanitize_min_max(t[1], CL_MIN_VOLT(cluster), CL_MAX_VOLT(cluster));
+		exynos_info[cluster]->volt_table[target] = t[1];
+	} else {
+		for (i = 0; i < tokens; i++) {
+			while (freq_table[i + invalid_offset].frequency == CPUFREQ_ENTRY_INVALID)
+				++invalid_offset;
+
+			if ((rest = t[i] % CL_VOLT_STEP) != 0)
+				t[i] += CL_VOLT_STEP - rest;
+
+			sanitize_min_max(t[i], CL_MIN_VOLT(cluster), CL_MAX_VOLT(cluster));
+			exynos_info[cluster]->volt_table[i + invalid_offset] = t[i];
+		}
+	}
+
+	ipa_update();
+
+	mutex_unlock(&cpufreq_lock);
+
+	return count;
+}
+
+>>>>>>> e0d12f5... Apply -thermal: IPA: update power tables on actor voltage change- by andreilux to the r12p0 driver
 static ssize_t show_cluster1_freq_table(struct kobject *kobj,
 				struct attribute *attr, char *buf)
 {
