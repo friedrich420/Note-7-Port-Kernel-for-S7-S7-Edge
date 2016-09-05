@@ -147,8 +147,6 @@ static noinline int __invoke_psci_fn_smc(u64 function_id, u64 arg0, u64 arg1,
 	return function_id;
 }
 
-=======
->>>>>>> 5b2b887... Linux 3.18.30
 static int psci_get_version(void)
 {
 	int err;
