@@ -495,11 +495,6 @@ static int __init dmi_present(const u8 *buf)
 	buf += 16;
 
 	if (memcmp(buf, "_DMI_", 5) == 0 && dmi_checksum(buf, 15)) {
-<<<<<<< HEAD
-		dmi_num = get_unaligned_le16(buf + 12);
-		dmi_len = get_unaligned_le16(buf + 6);
-		dmi_base = get_unaligned_le32(buf + 8);
-=======
 		if (smbios_ver)
 			dmi_ver = smbios_ver;
 		else
@@ -508,7 +503,6 @@ static int __init dmi_present(const u8 *buf)
 		dmi_len = (buf[7] << 8) | buf[6];
 		dmi_base = (buf[11] << 24) | (buf[10] << 16) |
 			(buf[9] << 8) | buf[8];
->>>>>>> 573ac39... Linux 3.18.15
 
 		if (dmi_walk_early(dmi_decode) == 0) {
 			if (smbios_ver) {
