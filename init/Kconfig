@@ -28,8 +28,6 @@ config BUILDTIME_EXTABLE_SORT
 
 menu "General setup"
 
-<<<<<<< HEAD
-=======
 config ZEN_INTERACTIVE
 	bool "Tune kernel for interactivity"
 	default y
@@ -58,7 +56,6 @@ config ZEN_INTERACTIVE
 
 	    Ondemand down scaling factor...:   1    ->  10
 
->>>>>>> 248c7e9... Zen_Interactive: Update zen-tune v4.5 [damentz]
 config BROKEN
 	bool
 
