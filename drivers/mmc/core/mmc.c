@@ -1068,8 +1068,6 @@ static int mmc_select_hs400(struct mmc_card *card)
 	      host->ios.bus_width == MMC_BUS_WIDTH_8))
 		return 0;
 
-<<<<<<< HEAD
-=======
 	/*
 	 * Before switching to dual data rate operation for HS400,
 	 * it is required to convert from HS200 mode to HS mode.
@@ -1087,7 +1085,6 @@ static int mmc_select_hs400(struct mmc_card *card)
 		return err;
 	}
 
->>>>>>> f330f78... Linux 3.18.27
 	if(card->en_strobe_enhanced) {
 		ext_csd_bits = EXT_CSD_STROBE_ENHANCED_EN;
 
