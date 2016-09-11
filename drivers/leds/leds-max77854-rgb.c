@@ -99,14 +99,11 @@ static unsigned int device_type = 0;
 static unsigned int brightness_ratio_r = 100;
 static unsigned int brightness_ratio_g = 100;
 static unsigned int brightness_ratio_b = 100;
-static unsigned int brightness_ratio_r_low = 20;
-static unsigned int brightness_ratio_g_low = 20;
-static unsigned int brightness_ratio_b_low = 20;
 static u8 led_lowpower_mode = 0x0;
 
 static unsigned int octa_color = 0x0;
 
-unsigned int  led_enable_fade = 0;
+unsigned int led_enable_fade = 1;
 unsigned int led_fade_time_up = 800;
 unsigned int led_fade_time_down = 800;
 unsigned int led_always_disable = 0;
@@ -155,7 +152,7 @@ static struct leds_control {
 } leds_control = {
     .current_low = 5,
     .current_high = 40,
-    .noti_ramp_control = 0,
+    .noti_ramp_control = 1,
     .noti_ramp_up = 800,
     .noti_ramp_down = 1000,
     .noti_delay_on = 500,
@@ -252,22 +249,13 @@ static void max77854_rgb_set_state(struct led_classdev *led_cdev,
 		/* apply brightness ratio for optimize each led brightness*/
 		switch(n) {
 		case RED:
-			if (device_type == 2 && led_lowpower_mode == 1)
-				brightness = brightness * brightness_ratio_r_low / 100;
-			else
-				brightness = brightness * brightness_ratio_r / 100;
+			brightness = brightness * brightness_ratio_r / 100;
 			break;
 		case GREEN:
-			if (device_type == 2 && led_lowpower_mode == 1)
-				brightness = brightness * brightness_ratio_g_low / 100;
-			else
-				brightness = brightness * brightness_ratio_g / 100;
+			brightness = brightness * brightness_ratio_g / 100;
 			break;
 		case BLUE:
-			if (device_type == 2 && led_lowpower_mode == 1)
-				brightness = brightness * brightness_ratio_b_low / 100;
-			else
-				brightness = brightness * brightness_ratio_b / 100;
+			brightness = brightness * brightness_ratio_b / 100;
 			break;
 		}
 
@@ -402,9 +390,6 @@ static struct max77854_rgb_platform_data
 	char br_ratio_r[23] = "br_ratio_r";
 	char br_ratio_g[23] = "br_ratio_g";
 	char br_ratio_b[23] = "br_ratio_b";
-	char br_ratio_r_low[23] = "br_ratio_r_low";
-	char br_ratio_g_low[23] = "br_ratio_g_low";
-	char br_ratio_b_low[23] = "br_ratio_b_low";
 	char normal_po_cur[29] = "normal_powermode_current";
 	char low_po_cur[26] = "low_powermode_current";
 
@@ -490,36 +475,11 @@ static struct max77854_rgb_platform_data
 			break;
 		}
 	}
-	/* GRACE */
-	else if(device_type == 2) {
-		switch(octa_color) {
-		case 0:
-			strcpy(octa, "_u");
-			break;
-		case 1:
-			strcpy(octa, "_bk");
-			break;
-		case 3:
-			strcpy(octa, "_gd");
-			break;
-		case 4:
-			strcpy(octa, "_sv");
-			break;
-		case 6:
-			strcpy(octa, "_bl");
-			break;
-		default:
-			break;
-		}
-	}
 	strcat(normal_po_cur, octa);
 	strcat(low_po_cur, octa);
 	strcat(br_ratio_r, octa);
 	strcat(br_ratio_g, octa);
 	strcat(br_ratio_b, octa);
-	strcat(br_ratio_r_low, octa);
-	strcat(br_ratio_g_low, octa);
-	strcat(br_ratio_b_low, octa);
 
 	/* get normal_powermode_current value in dt */
 	ret = of_property_read_u32(np, normal_po_cur, &temp);
@@ -569,44 +529,6 @@ static struct max77854_rgb_platform_data
 		brightness_ratio_b = (int)temp;
 	}
 	pr_info("leds-max77854-rgb: %s, brightness_ratio_b = %x\n", __func__, brightness_ratio_b);
-
-	if (device_type == 2) {
-		/* get led red brightness ratio lowpower */
-		ret = of_property_read_u32(np, br_ratio_r_low, &temp);
-		if (IS_ERR_VALUE(ret)) {
-			pr_info("leds-max77854-rgb: %s, can't parsing "\
-					"brightness_ratio_r_low in dt\n", __func__);
-		}
-		else {
-			brightness_ratio_r_low = (int)temp;
-		}
-		pr_info("leds-max77854-rgb: %s, brightness_ratio_r_low = %x\n",
-				__func__, brightness_ratio_r_low);
-
-		/* get led green brightness ratio lowpower*/
-		ret = of_property_read_u32(np, br_ratio_g_low, &temp);
-		if (IS_ERR_VALUE(ret)) {
-			pr_info("leds-max77854-rgb: %s, can't parsing "\
-					"brightness_ratio_g_low in dt\n", __func__);
-		}
-		else {
-			brightness_ratio_g_low = (int)temp;
-		}
-		pr_info("leds-max77854-rgb: %s, brightness_ratio_g_low = %x\n",
-				__func__, brightness_ratio_g_low);
-
-		/* get led blue brightness ratio lowpower */
-		ret = of_property_read_u32(np, br_ratio_b_low, &temp);
-		if (IS_ERR_VALUE(ret)) {
-			pr_info("leds-max77854-rgb: %s, can't parsing "\
-					"brightness_ratio_b_low in dt\n", __func__);
-		}
-		else {
-			brightness_ratio_b_low = (int)temp;
-		}
-		pr_info("leds-max77854-rgb: %s, brightness_ratio_b_low = %x\n",
-				__func__, brightness_ratio_b_low);
-	}
 	return pdata;
 }
 #endif
@@ -679,7 +601,7 @@ static bool check_restrictions(void)
 	struct tm tmv;
 	int curhour;
 	bool ret = true;
-	
+
 	if (led_always_disable)
 	{
 		ret = false;
@@ -690,13 +612,13 @@ static bool check_restrictions(void)
 	{
 		do_gettimeofday(&curtime);
 		time_to_tm(curtime.tv_sec, 0, &tmv);
-	
+
 		curhour = tmv.tm_hour + ((sys_tz.tz_minuteswest / 60) * -1);
 		if (curhour < 0)
 			curhour = 24 + curhour;
 		if (curhour > 23)
 			curhour = curhour - 24;
-	
+
 		if (led_debug_enable) pr_alert("CHECK LED TIME RESTRICTION: %d:%d:%d:%ld -- %d -- %d -- %d\n", tmv.tm_hour, tmv.tm_min, 
 				         tmv.tm_sec, curtime.tv_usec, sys_tz.tz_minuteswest, sys_tz.tz_dsttime, curhour);
 		if (led_block_leds_time_start > led_block_leds_time_stop)
@@ -751,33 +673,34 @@ static ssize_t store_max77854_rgb_pattern(struct device *dev,
 	switch (mode) {
 
 	case CHARGING:
-	{
-		max77854_rgb_set_state(&max77854_rgb->led[RED], led_dynamic_current, LED_ALWAYS_ON);
+		if (leds_control.noti_ramp_control == 1) {
+			max77854_rgb_ramp(dev, leds_control.noti_ramp_up, leds_control.noti_ramp_down);
+			max77854_rgb_blink(dev, 500, 500);
+			max77854_rgb_set_state(&max77854_rgb->led[RED], led_dynamic_current, LED_BLINK);
+		} else {
+			max77854_rgb_set_state(&max77854_rgb->led[RED], led_dynamic_current, LED_ALWAYS_ON);
+		}
 		break;
-	}
 	case CHARGING_ERR:
-	if (leds_control.noti_ramp_control == 1)
-		max77854_rgb_ramp(dev, leds_control.noti_ramp_up, leds_control.noti_ramp_down);
 		max77854_rgb_blink(dev, 500, 500);
 		max77854_rgb_set_state(&max77854_rgb->led[RED], led_dynamic_current, LED_BLINK);
 		break;
 	case MISSED_NOTI:
-	if (leds_control.noti_ramp_control == 1)
-		max77854_rgb_ramp(dev, leds_control.noti_ramp_up, leds_control.noti_ramp_down);
-		if (led_enable_fade)
-		{
-			max77854_rgb_ramp(dev, led_fade_time_up, led_fade_time_down);
-			max77854_rgb_blink(dev, led_fade_time_up, 5000);
-		}
-		else
-		{
+		if (leds_control.noti_ramp_control == 1) {
+			max77854_rgb_ramp(dev, leds_control.noti_ramp_up, leds_control.noti_ramp_down);
+			if (led_enable_fade) {
+				max77854_rgb_ramp(dev, led_fade_time_up, led_fade_time_down);
+				max77854_rgb_blink(dev, led_fade_time_up, 5000);
+			}
+		} else {
 			max77854_rgb_blink(dev, 500, 5000);
 		}
 		max77854_rgb_set_state(&max77854_rgb->led[BLUE], led_dynamic_current, LED_BLINK);
 		break;
 	case LOW_BATTERY:
-	if (leds_control.noti_ramp_control == 1)
-		max77854_rgb_ramp(dev, leds_control.noti_ramp_up, leds_control.noti_ramp_down);
+		if (leds_control.noti_ramp_control == 1) {
+			max77854_rgb_ramp(dev, leds_control.noti_ramp_up, leds_control.noti_ramp_down);
+		}
 		max77854_rgb_blink(dev, leds_control.noti_delay_on, leds_control.noti_delay_off);
 		max77854_rgb_set_state(&max77854_rgb->led[RED], led_dynamic_current, LED_BLINK);
 		break;
@@ -785,8 +708,9 @@ static ssize_t store_max77854_rgb_pattern(struct device *dev,
 		max77854_rgb_set_state(&max77854_rgb->led[GREEN], led_dynamic_current, LED_ALWAYS_ON);
 		break;
 	case POWERING:
-	if (leds_control.noti_ramp_control == 1)
-		max77854_rgb_ramp(dev, leds_control.noti_ramp_up, leds_control.noti_ramp_down);
+		if (leds_control.noti_ramp_control == 1) {
+			max77854_rgb_ramp(dev, leds_control.noti_ramp_up, leds_control.noti_ramp_down);
+		}
 		max77854_rgb_blink(dev, leds_control.noti_delay_on, leds_control.noti_delay_off);
 		max77854_rgb_set_state(&max77854_rgb->led[BLUE], led_dynamic_current, LED_ALWAYS_ON);
 		max77854_rgb_set_state(&max77854_rgb->led[GREEN], led_dynamic_current, LED_BLINK);
@@ -1077,7 +1001,7 @@ static ssize_t led_fade_store(struct device *dev,
 	retval = sscanf(buf, "%d", &enabled);
 	if (retval != 0 && (enabled == 0 || enabled == 1))
 		led_enable_fade = enabled;
-		
+
 	printk(KERN_DEBUG "led_fade is called\n");
 
 	return count;
@@ -1102,7 +1026,7 @@ static ssize_t led_debug_enable_store(struct device *dev,
 	retval = sscanf(buf, "%d", &enabled);
 	if (retval != 0 && (enabled == 0 || enabled == 1))
 		led_debug_enable = enabled;
-		
+
 	printk(KERN_DEBUG "led_debug_enable is called\n");
 
 	return count;
@@ -1298,7 +1222,7 @@ static ssize_t show_leds_property(struct device *dev,
                                   struct device_attribute *attr, char *buf)
 {
     const ptrdiff_t offset = attr - leds_control_attrs;
-    
+
     switch (offset) {
         case LOWPOWER_CURRENT:
             return sprintf(buf, "%d", leds_control.current_low);
@@ -1315,7 +1239,7 @@ static ssize_t show_leds_property(struct device *dev,
         case NOTIFICATION_DELAY_OFF:
             return sprintf(buf, "%d", leds_control.noti_delay_off);
     }
-    
+
     return -EINVAL;
 }
 
@@ -1325,10 +1249,10 @@ static ssize_t store_leds_property(struct device *dev,
 {
     int val;
     const ptrdiff_t offset = attr - leds_control_attrs;
-    
+
     if(sscanf(buf, "%d", &val) != 1)
         return -EINVAL;
-    
+
     switch (offset) {
         case LOWPOWER_CURRENT:
             sanitize_min_max(val, 0, LED_MAX_CURRENT);
@@ -1359,7 +1283,7 @@ static ssize_t store_leds_property(struct device *dev,
             leds_control.noti_delay_off = val;
             break;
     }
-    
+
     return len;
 }
 
@@ -1580,4 +1504,3 @@ MODULE_AUTHOR("Jeongwoong Lee<jell.lee@samsung.com>");
 MODULE_DESCRIPTION("MAX77854 RGB driver");
 MODULE_LICENSE("GPL v2");
 MODULE_VERSION("1.0");
-
