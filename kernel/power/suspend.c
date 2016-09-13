@@ -200,10 +200,26 @@ static void platform_recover(suspend_state_t state)
 		suspend_ops->recover();
 }
 
-static bool platform_suspend_again(suspend_state_t state)
+static bool platform_suspend_again(void)
 {
-	return state != PM_SUSPEND_FREEZE && suspend_ops->suspend_again ?
+	int count;
+	bool suspend = suspend_ops->suspend_again ?
 		suspend_ops->suspend_again() : false;
+
+	if (suspend) {
+		/*
+		 * pm_get_wakeup_count() gets an updated count of wakeup events
+		 * that have occured and will return false (i.e. abort suspend)
+		 * if a wakeup event has been started during suspend_again() and
+		 * is still active. pm_save_wakeup_count() stores the count
+		 * and enables pm_wakeup_pending() to properly analyze wakeup
+		 * events before entering suspend in suspend_enter().
+		 */
+		suspend = pm_get_wakeup_count(&count, false) &&
+			  pm_save_wakeup_count(count);
+	}
+
+	return suspend;
 }
 
 static int suspend_test(int level)
@@ -401,7 +417,7 @@ int suspend_devices_and_enter(suspend_state_t state)
 
 	do {
 		error = suspend_enter(state, &wakeup);
-	} while (!error && !wakeup && platform_suspend_again(state));
+	} while (!error && !wakeup && platform_suspend_again());
 
  Resume_devices:
 	suspend_test_start();
