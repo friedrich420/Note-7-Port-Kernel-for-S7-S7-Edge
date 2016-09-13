@@ -122,28 +122,6 @@ void suspend_set_ops(const struct platform_suspend_ops *ops)
 }
 EXPORT_SYMBOL_GPL(suspend_set_ops);
 
-static int _suspend_enter(suspend_state_t state)
-{
-	int error;
-	arch_suspend_disable_irqs();
-	BUG_ON(!irqs_disabled());
-
-	error = sysdev_suspend(PMSG_SUSPEND);
-	if (!error) {
-		if (!suspend_test(TEST_CORE))
-			error = suspend_ops->enter(state);
-		sysdev_resume();
-	}
-	if (!error) {
-#ifdef CONFIG_QUICK_WAKEUP
-		quickwakeup_check();
-#endif
-	}
-	arch_suspend_enable_irqs();
-	BUG_ON(irqs_disabled());
-	return error;
-}
-
 /**
  * suspend_valid_only_mem - Generic memory-only valid callback.
  *
