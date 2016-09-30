@@ -24,7 +24,7 @@
  *
  * <<Broadcom-WL-IPTag/Open:>>
  *
- * $Id: wl_cfg80211.c 644974 2016-06-22 04:54:25Z $
+ * $Id: wl_cfg80211.c 652895 2016-08-04 06:04:25Z $
  */
 /* */
 #include <typedefs.h>
@@ -1744,12 +1744,13 @@ wl_cfg80211_add_virtual_iface(struct wiphy *wiphy,
 #endif 
 #endif /* PROP_TXSTATUS_VSDB */
 
+
 		/* Dual p2p doesn't support multiple P2PGO interfaces,
 		 * p2p_go_count is the counter for GO creation
 		 * requests.
 		 */
-		if ((cfg->p2p->p2p_go_count > 0) && (type == NL80211_IFTYPE_P2P_GO)) {
-			WL_ERR(("Fw doesnot support  multiple Go"));
+	     if	((cfg->p2p->p2p_go_count > 0) && (type == NL80211_IFTYPE_P2P_GO)) {
+		     WL_ERR(("Fw doesnot support  multiple Go"));
 			return ERR_PTR(-ENOMEM);
 		}
 		/* In concurrency case, STA may be already associated in a particular channel.
@@ -5874,6 +5875,7 @@ wl_cfg80211_get_station(struct wiphy *wiphy, struct net_device *dev,
 	} else if (wl_get_mode_by_netdev(cfg, dev) == WL_MODE_BSS ||
 		wl_get_mode_by_netdev(cfg, dev) == WL_MODE_IBSS) {
 		get_pktcnt_t pktcnt;
+		wl_if_stats_t *if_stats = NULL;
 		u8 *curmacp;
 
 		if (cfg->roam_offload) {
@@ -5976,18 +5978,40 @@ wl_cfg80211_get_station(struct wiphy *wiphy, struct net_device *dev,
 		sinfo->filled |= STA_INFO_BIT(INFO_SIGNAL);
 		sinfo->signal = rssi;
 		WL_DBG(("RSSI %d dBm\n", rssi));
-		err = wldev_ioctl(dev, WLC_GET_PKTCNTS, &pktcnt,
-			sizeof(pktcnt), false);
-		if (!err) {
-			sinfo->filled |= (STA_INFO_BIT(INFO_RX_PACKETS) |
-				STA_INFO_BIT(INFO_RX_DROP_MISC) |
-				STA_INFO_BIT(INFO_TX_PACKETS) |
-				STA_INFO_BIT(INFO_TX_FAILED));
-			sinfo->rx_packets = pktcnt.rx_good_pkt;
-			sinfo->rx_dropped_misc = pktcnt.rx_bad_pkt;
-			sinfo->tx_packets = pktcnt.tx_good_pkt;
-			sinfo->tx_failed  = pktcnt.tx_bad_pkt;
+
+		if ((if_stats = kmalloc(sizeof(*if_stats), GFP_KERNEL)) == NULL) {
+			WL_ERR(("%s(%d): kmalloc failed\n", __FUNCTION__, __LINE__));
+			goto error;
 		}
+		memset(if_stats, 0, sizeof(*if_stats));
+
+		err = wldev_iovar_getbuf(dev, "if_counters", NULL, 0,
+			(char *)if_stats, sizeof(*if_stats), NULL);
+		if (err) {
+			WL_ERR(("%s: if_counters not supported ret=%d\n",
+				__FUNCTION__, err));
+
+			err = wldev_ioctl(dev, WLC_GET_PKTCNTS, &pktcnt,
+				sizeof(pktcnt), false);
+			if (!err) {
+				sinfo->rx_packets = pktcnt.rx_good_pkt;
+				sinfo->rx_dropped_misc = pktcnt.rx_bad_pkt;
+				sinfo->tx_packets = pktcnt.tx_good_pkt;
+				sinfo->tx_failed  = pktcnt.tx_bad_pkt;
+			}
+		} else {
+			sinfo->rx_packets = (uint32)dtoh64(if_stats->rxframe);
+			sinfo->rx_dropped_misc = 0;
+			sinfo->tx_packets = (uint32)dtoh64(if_stats->txfrmsnt);
+			sinfo->tx_failed = (uint32)dtoh64(if_stats->txerror) +
+				(uint32)dtoh64(if_stats->txfail);
+		}
+
+		sinfo->filled |= (STA_INFO_BIT(INFO_RX_PACKETS) |
+			STA_INFO_BIT(INFO_RX_DROP_MISC) |
+			STA_INFO_BIT(INFO_TX_PACKETS) |
+			STA_INFO_BIT(INFO_TX_FAILED));
+
 get_station_err:
 		if (err && (err != -ERESTARTSYS)) {
 			/* Disconnect due to zero BSSID or error to get RSSI */
@@ -5995,6 +6019,10 @@ get_station_err:
 			wl_clr_drv_status(cfg, CONNECTED, dev);
 			CFG80211_DISCONNECTED(dev, 0, NULL, 0, false, GFP_KERNEL);
 			wl_link_down(cfg);
+		}
+error:
+		if (if_stats) {
+			kfree(if_stats);
 		}
 	}
 	else {
@@ -9334,7 +9362,8 @@ wl_cfg80211_change_beacon(
 
 	WL_DBG(("Enter \n"));
 
-	if (dev == bcmcfg_to_prmry_ndev(cfg)) {
+	if ((dev == bcmcfg_to_prmry_ndev(cfg)) ||
+		(dev == ((struct net_device *)cfgdev_to_ndev(cfg->bss_cfgdev)))) {
 		dev_role = NL80211_IFTYPE_AP;
 	}
 #if defined(WL_ENABLE_P2P_IF)
@@ -11120,13 +11149,14 @@ wl_notify_connect_status(struct bcm_cfg80211 *cfg, bcm_struct_cfgdev *cfgdev,
 			wl_update_prof(cfg, ndev, NULL, (const void *)&e->addr, WL_PROF_BSSID);
 
 		} else if (wl_is_linkdown(cfg, e)) {
+#ifdef DYNAMIC_MUMIMO_CONTROL
+			wl_set_murx_reassoc_status(cfg, FALSE);
+			/* Reset default murx_bfe_cap value */
+			wl_set_murx_bfe_cap(ndev, 1, FALSE);
+#endif /* DYNAMIC_MUMIMO_CONTROL */
 #ifdef DHD_LOSSLESS_ROAMING
 			wl_del_roam_timeout(cfg);
 #endif
-#ifdef DYNAMIC_MUMIMO_CONTROL
-			cfg->reassoc_mumimo_sw = 0;
-			wl_set_murx_bfe_cap(ndev, 1);
-#endif /* DYNAMIC_MUMIMO_CONTROL */
 #ifdef P2PLISTEN_AP_SAMECHN
 			if (ndev == bcmcfg_to_prmry_ndev(cfg)) {
 				wl_cfg80211_set_p2p_resp_ap_chn(ndev, 0);
@@ -11221,9 +11251,28 @@ wl_notify_connect_status(struct bcm_cfg80211 *cfg, bcm_struct_cfgdev *cfgdev,
 					wl_init_prof(cfg, ndev);
 				}
 #ifdef WBTEXT
-				/* when STA was disconnected, reset roam profile */
-				if (ndev->ieee80211_ptr->iftype == NL80211_IFTYPE_STATION)
-					wl_cfg80211_wbtext_set_default(ndev);
+				/* when STA was disconnected, clear join pref and set wbtext */
+				if (ndev->ieee80211_ptr->iftype == NL80211_IFTYPE_STATION) {
+					char smbuf[WLC_IOCTL_SMLEN];
+					char clear[] = { 0x01, 0x02, 0x00, 0x00, 0x03,
+						0x02, 0x00, 0x00, 0x04, 0x02, 0x00, 0x00 };
+					if ((err = wldev_iovar_setbuf(ndev, "join_pref", clear,
+							sizeof(clear), smbuf, sizeof(smbuf), NULL))
+							== BCME_OK) {
+						if ((err = wldev_iovar_setint(ndev,
+								"wnm_bsstrans_resp",
+								WL_BSSTRANS_POLICY_PRODUCT))
+								== BCME_OK) {
+							wl_cfg80211_wbtext_set_default(ndev);
+						} else {
+							WL_ERR(("%s: Failed to set wbtext = %d\n",
+								__FUNCTION__, err));
+						}
+					} else {
+						WL_ERR(("%s: Failed to clear join pref = %d\n",
+							__FUNCTION__, err));
+					}
+				}
 #endif /* WBTEXT */
 			}
 			else if (wl_get_drv_status(cfg, CONNECTING, ndev)) {
@@ -11830,7 +11879,11 @@ wl_bss_roaming_done(struct bcm_cfg80211 *cfg, struct net_device *ndev,
 		data_len = ntoh32(e->datalen);
 #endif /* WLFBT */
 
-	if (memcmp(&cfg->last_roamed_addr, &e->addr, ETHER_ADDR_LEN) == 0) {
+	if (memcmp(&cfg->last_roamed_addr, &e->addr, ETHER_ADDR_LEN) == 0 &&
+#ifdef DYNAMIC_MUMIMO_CONTROL
+		!wl_get_murx_reassoc_status(cfg) &&
+#endif /* DYNAMIC_MUMIMO_CONTROL */
+		TRUE) {
 		WL_INFORM(("BSSID already updated\n"));
 		return err;
 	}
@@ -11839,37 +11892,11 @@ wl_bss_roaming_done(struct bcm_cfg80211 *cfg, struct net_device *ndev,
 	 * roamed bssid are same. Also clear timer roam_timeout.
 	 */
 	curbssid = wl_read_prof(cfg, ndev, WL_PROF_BSSID);
-	if (memcmp(curbssid, &e->addr, ETHER_ADDR_LEN) == 0) {
+	if (memcmp(curbssid, &e->addr, ETHER_ADDR_LEN) == 0 &&
 #ifdef DYNAMIC_MUMIMO_CONTROL
-		if (cfg->reassoc_mumimo_sw) {
-			/* Reset the reassoc flag */
-			cfg->reassoc_mumimo_sw = 0;
-
-#if (LINUX_VERSION_CODE > KERNEL_VERSION(2, 6, 39)) || defined(WL_COMPAT_WIRELESS)
-			/* channel info for cfg80211_roamed introduced in 2.6.39-rc1 */
-			channel = (u32 *)wl_read_prof(cfg, ndev, WL_PROF_CHAN);
-			if (*channel <= CH_MAX_2G_CHANNEL) {
-				band = wiphy->bands[IEEE80211_BAND_2GHZ];
-			} else {
-				band = wiphy->bands[IEEE80211_BAND_5GHZ];
-			}
-			freq = ieee80211_channel_to_frequency(*channel, band->band);
-			notify_channel = ieee80211_get_channel(wiphy, freq);
-#endif /* LINUX_VERSION > 2.6.39  || WL_COMPAT_WIRELESS */
-
-			/* send roam event to WPA supplicant */
-			cfg80211_roamed(ndev,
-#if (LINUX_VERSION_CODE > KERNEL_VERSION(2, 6, 39)) || defined(WL_COMPAT_WIRELESS)
-				notify_channel,
-#endif
-				curbssid,
-				conn_info->req_ie, conn_info->req_ie_len,
-				conn_info->resp_ie, conn_info->resp_ie_len, GFP_KERNEL);
-			WL_ERR(("Report roaming event after MU-MIMO configuration\n"));
-
-			return 0;
-		}
+		!wl_get_murx_reassoc_status(cfg) &&
 #endif /* DYNAMIC_MUMIMO_CONTROL */
+		TRUE) {
 		WL_ERR(("BSS already present, Skipping roamed event to upper layer\n"));
 #ifdef DHD_LOSSLESS_ROAMING
 		wl_del_roam_timeout(cfg);
@@ -11918,8 +11945,27 @@ wl_bss_roaming_done(struct bcm_cfg80211 *cfg, struct net_device *ndev,
 	wl_set_drv_status(cfg, CONNECTED, ndev);
 
 #if defined(DHD_ENABLE_BIGDATA_LOGGING)
+#ifdef DYNAMIC_MUMIMO_CONTROL
+	if (!wl_get_murx_reassoc_status(cfg))
+#endif /* DYNAMIC_MUMIMO_CONTROL */
 	cfg->roam_count++;
 #endif /* DHD_ENABLE_BIGDATA_LOGGING */
+
+#ifdef DYNAMIC_MUMIMO_CONTROL
+	if (wl_get_murx_reassoc_status(cfg)) {
+		struct wl_security *sec = wl_read_prof(cfg, ndev, WL_PROF_SEC);
+		bool sec_wpa = sec ? (sec->wpa_versions &
+			(NL80211_WPA_VERSION_1 | NL80211_WPA_VERSION_2)) : FALSE;
+		dhd_pub_t *dhdp = (dhd_pub_t *)(cfg->pub);
+		if (!sec_wpa) {
+			wl_set_murx_reassoc_status(cfg, FALSE);
+			WL_DBG(("Security is not WPA nor WPA2\n"));
+		} else {
+			WL_DBG(("Security is WPA or WPA2\n"));
+		}
+		dhd_txflowcontrol(dhdp, ALL_INTERFACES, OFF);
+	}
+#endif /* DYNAMIC_MUMIMO_CONTROL */
 
 	return err;
 }
@@ -12448,9 +12494,6 @@ wl_notify_rx_mgmt_frame(struct bcm_cfg80211 *cfg, bcm_struct_cfgdev *cfgdev,
 	wifi_p2p_pub_act_frame_t *act_frm = NULL;
 	wifi_p2p_action_frame_t *p2p_act_frm = NULL;
 	wifi_p2psd_gas_pub_act_frame_t *sd_act_frm = NULL;
-#if defined(WLTDLS) && defined(TDLS_MSG_ONLY_WFD)
-	dhd_pub_t *dhdp;
-#endif /* WLTDLS && TDLS_MSG_ONLY_WFD */
 	wl_event_rx_frame_data_t *rxframe =
 		(wl_event_rx_frame_data_t*)data;
 	u32 event = ntoh32(e->event_type);
@@ -12458,10 +12501,21 @@ wl_notify_rx_mgmt_frame(struct bcm_cfg80211 *cfg, bcm_struct_cfgdev *cfgdev,
 	u8 bsscfgidx = e->bsscfgidx;
 	u32 mgmt_frame_len = ntoh32(e->datalen) - sizeof(wl_event_rx_frame_data_t);
 	u16 channel = ((ntoh16(rxframe->channel) & WL_CHANSPEC_CHAN_MASK));
+	dhd_pub_t *dhdp = (dhd_pub_t *)(cfg->pub);
 
 	memset(&bssid, 0, ETHER_ADDR_LEN);
 
-	ndev = cfgdev_to_wlc_ndev(cfgdev, cfg);
+	if (cfg->bss_cfgdev &&
+		(dhdp->op_mode & DHD_FLAG_HOSTAP_MODE) &&
+		event == WLC_E_PROBREQ_MSG) {
+		/* Handle probe reqs frame
+		 * WPS-AP certification 4.2.13
+		 */
+		ndev = cfgdev_to_ndev(cfg->bss_cfgdev);
+		cfgdev = cfg->bss_cfgdev;
+	} else {
+		ndev = cfgdev_to_wlc_ndev(cfgdev, cfg);
+	}
 
 	if (channel <= CH_MAX_2G_CHANNEL)
 		band = wiphy->bands[IEEE80211_BAND_2GHZ];
@@ -12529,7 +12583,6 @@ wl_notify_rx_mgmt_frame(struct bcm_cfg80211 *cfg, bcm_struct_cfgdev *cfgdev,
 					mgmt_frame[DOT11_MGMT_HDR_LEN + 1]));
 			}
 #ifdef TDLS_MSG_ONLY_WFD
-			dhdp = (dhd_pub_t *)(cfg->pub);
 			if (!dhdp->tdls_mode) {
 				WL_DBG((" TDLS Frame filtered \n"));
 				return 0;
@@ -18895,6 +18948,29 @@ s32 wl_cfg80211_custom_scan_time(enum wl_custom_scan_time_type type, int time)
 #endif /* WES_SUPPORT */
 
 #ifdef DYNAMIC_MUMIMO_CONTROL
+bool
+wl_get_murx_reassoc_status(struct bcm_cfg80211 *cfg)
+{
+	int status = 0;
+	dhd_pub_t *dhdp = (dhd_pub_t *)(cfg->pub);
+
+	if (dhdp) {
+		status = dhdp->reassoc_mumimo_sw;
+	}
+
+	return status ? TRUE : FALSE;
+}
+
+void
+wl_set_murx_reassoc_status(struct bcm_cfg80211 *cfg, int enable)
+{
+	dhd_pub_t *dhdp = (dhd_pub_t *)(cfg->pub);
+
+	if (dhdp) {
+		dhdp->reassoc_mumimo_sw = enable;
+	}
+}
+
 int
 wl_check_bss_support_mumimo(struct net_device *dev)
 {
@@ -18967,7 +19043,7 @@ wl_get_murx_bfe_cap(struct net_device *dev, int *cap)
 }
 
 int
-wl_set_murx_bfe_cap(struct net_device *dev, int val)
+wl_set_murx_bfe_cap(struct net_device *dev, int val, bool reassoc_req)
 {
 	int err = BCME_OK;
 	int cur_val;
@@ -18975,11 +19051,17 @@ wl_set_murx_bfe_cap(struct net_device *dev, int val)
 	struct ether_addr bssid;
 	wl_reassoc_params_t params;
 	struct bcm_cfg80211 *cfg = g_bcm_cfg;
+	dhd_pub_t *dhdp = (dhd_pub_t *)(cfg->pub);
 
 	if (iface_count > 1) {
 		WL_ERR(("murx_bfe_cap change is not allowed when "
 			"there are multiple interfaces\n"));
 		return -EINVAL;
+	}
+
+	if (reassoc_req && wl_get_murx_reassoc_status(cfg)) {
+		WL_ERR(("Reassociation is in progress...\n"));
+		return err;
 	}
 
 	/* Check the current value */
@@ -19004,24 +19086,43 @@ wl_set_murx_bfe_cap(struct net_device *dev, int val)
 		return err;
 	}
 
-	/* If successful intiate a reassoc */
-	if ((err = wldev_ioctl(dev, WLC_GET_BSSID, &bssid, ETHER_ADDR_LEN, false)) < 0) {
-		WL_ERR(("Failed to get bssid, error=%d\n", err));
-		return err;
-	}
+	if (reassoc_req) {
+		/* Enable Tx flow control not to send any data frames to dongle
+		 * while reassociation procedure is in progress
+		 */
+		dhd_txflowcontrol(dhdp, ALL_INTERFACES, ON);
 
-	bzero(&params, sizeof(wl_reassoc_params_t));
-	memcpy(&params.bssid, &bssid, ETHER_ADDR_LEN);
-	cfg->reassoc_mumimo_sw = 0;
+		/* If successful intiate a reassoc */
+		if ((err = wldev_ioctl(dev, WLC_GET_BSSID, &bssid, ETHER_ADDR_LEN, false)) < 0) {
+			WL_ERR(("Failed to get bssid, error=%d\n", err));
+			dhd_txflowcontrol(dhdp, ALL_INTERFACES, OFF);
+			return err;
+		}
 
-	if ((err = wldev_ioctl(dev, WLC_REASSOC, &params,
-		sizeof(wl_reassoc_params_t), true)) < 0) {
-		WL_ERR(("reassoc failed err:%d\n", err));
-	} else {
-		cfg->reassoc_mumimo_sw = 1;
-		WL_DBG(("reassoc issued successfully\n"));
+		bzero(&params, sizeof(wl_reassoc_params_t));
+		memcpy(&params.bssid, &bssid, ETHER_ADDR_LEN);
+
+		if ((err = wldev_ioctl(dev, WLC_REASSOC, &params,
+			sizeof(wl_reassoc_params_t), true)) < 0) {
+			WL_ERR(("reassoc failed err:%d\n", err));
+			dhd_txflowcontrol(dhdp, ALL_INTERFACES, OFF);
+			/* configure previous value */
+			err = wldev_iovar_setbuf_bsscfg(dev, "murx_bfe_cap", (void *)&cur_val,
+				sizeof(val), cfg->ioctl_buf, WLC_IOCTL_SMLEN, 0,
+				&cfg->ioctl_buf_sync);
+			if (unlikely(err)) {
+				WL_ERR(("Failed to set murx_bfe_cap IOVAR to %d,"
+					"error %d\n", val, err));
+				return err;
+			}
+			wl_set_murx_reassoc_status(cfg, FALSE);
+		} else {
+			WL_ERR(("reassoc issued successfully\n"));
+			wl_set_murx_reassoc_status(cfg, TRUE);
+		}
 	}
 
 	return err;
 }
 #endif /* DYNAMIC_MUMIMO_CONTROL */
+
