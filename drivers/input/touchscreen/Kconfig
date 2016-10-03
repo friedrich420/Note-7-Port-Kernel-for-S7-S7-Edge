@@ -991,10 +991,6 @@ source "drivers/input/touchscreen/synaptics_dsx2/Kconfig"
 source "drivers/input/touchscreen/stm/Kconfig"
 source "drivers/input/touchscreen/stm/fts7/Kconfig"
 source "drivers/input/touchscreen/sec_ts/Kconfig"
-<<<<<<< HEAD
 source "drivers/input/touchscreen/mxt_t/Kconfig"
 source "drivers/input/touchscreen/melfas/mms100s/Kconfig"
-=======
-
->>>>>>> 3c9cc69... potentially add d2w and sweep2sleep
 endif
