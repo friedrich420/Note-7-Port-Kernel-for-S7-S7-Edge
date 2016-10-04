@@ -1629,11 +1629,6 @@ inline ssize_t store_core_freq(const char *buf, size_t count,
 	return count;
 }
 
-<<<<<<< HEAD
-=======
-<<<<<<< HEAD
-=======
->>>>>>> parent of 3b239e4... Revert "Apply -thermal: IPA: update power tables on actor voltage change- by andreilux to the r12p0 driver"
 static size_t get_freq_table_size(struct cpufreq_frequency_table *freq_table)
 {
 	size_t tbl_sz = 0;
@@ -1718,20 +1713,11 @@ static ssize_t store_volt_table(struct kobject *kobj, struct attribute *attr,
 		}
 	}
 
-<<<<<<< HEAD
-=======
-	ipa_update();
-
->>>>>>> parent of 3b239e4... Revert "Apply -thermal: IPA: update power tables on actor voltage change- by andreilux to the r12p0 driver"
 	mutex_unlock(&cpufreq_lock);
 
 	return count;
 }
 
-<<<<<<< HEAD
-=======
->>>>>>> e0d12f5... Apply -thermal: IPA: update power tables on actor voltage change- by andreilux to the r12p0 driver
->>>>>>> parent of 3b239e4... Revert "Apply -thermal: IPA: update power tables on actor voltage change- by andreilux to the r12p0 driver"
 static ssize_t show_cluster1_freq_table(struct kobject *kobj,
 				struct attribute *attr, char *buf)
 {
