@@ -2194,7 +2194,6 @@ wl_event_process_default(wl_event_msg_t *event, struct wl_evt_pport *evt_pport)
 	return BCME_OK;
 }
 
-
 int
 wl_event_process(dhd_pub_t *dhd_pub, int *ifidx, void *pktdata,
 	uint pktlen, void **data_ptr, void *raw_event)
@@ -4098,7 +4097,6 @@ dhd_get_clminfo(dhd_pub_t *dhd, char *clm_path)
 	char *bufp;
 	uint len = MAX_CLMINFO_BUF_SIZE;
 	char *tokenp = NULL;
-
 	int cnt = 0;
 
 	char tokdelim;
@@ -4219,6 +4217,7 @@ dhd_get_clminfo(dhd_pub_t *dhd, char *clm_path)
 out:
 	if (memblock) {
 		dhd_free_download_buffer(dhd, memblock, MAX_CLMINFO_BUF_SIZE);
+	}
 	if (bcmerror != BCME_OK) {
 		DHD_ERROR(("%s: .clminfo parsing fail!!\n", __FUNCTION__));
 	}
